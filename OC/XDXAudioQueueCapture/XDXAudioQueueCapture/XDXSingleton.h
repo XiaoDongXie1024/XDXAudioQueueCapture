@@ -26,6 +26,15 @@ _instace = [super allocWithZone:zone]; \
 return _instace; \
 } \
 \
+- (id)init \
+{ \
+static dispatch_once_t onceToken; \
+dispatch_once(&onceToken, ^{ \
+_instace = [super init]; \
+}); \
+return _instace; \
+} \
+\
 + (id)copyWithZone:(struct _NSZone *)zone \
 { \
 return _instace; \

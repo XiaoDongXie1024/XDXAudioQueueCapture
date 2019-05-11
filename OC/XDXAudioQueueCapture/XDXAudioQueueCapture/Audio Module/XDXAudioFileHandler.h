@@ -16,17 +16,6 @@ SingletonH
 
 + (instancetype)getInstance;
 
-
-/**
- * Start / Stop record.
- */
--(void)startVoiceRecordByAudioQueue:(AudioQueueRef)audioQueue
-                  isNeedMagicCookie:(BOOL)isNeedMagicCookie
-                          audioDesc:(AudioStreamBasicDescription)audioDesc;
-
--(void)stopVoiceRecordWithNeedMagicCookie:(BOOL)isNeedMagicCookie;
-
-
 /**
  * Write audio data to file.
  */
@@ -35,7 +24,27 @@ SingletonH
                        inBuffer:(const void *)inBuffer
                    inPacketDesc:(const AudioStreamPacketDescription*)inPacketDesc;
 
-- (AudioFileID)test;
+#pragma mark - Audio Queue
+/**
+ * Start / Stop record By Audio Queue.
+ */
+-(void)startVoiceRecordByAudioQueue:(AudioQueueRef)audioQueue
+                  isNeedMagicCookie:(BOOL)isNeedMagicCookie
+                          audioDesc:(AudioStreamBasicDescription)audioDesc;
+
+-(void)stopVoiceRecordByAudioQueue:(AudioQueueRef)audioQueue
+                   needMagicCookie:(BOOL)isNeedMagicCookie;
+
+
+/**
+ * Start / Stop record By Audio Converter.
+ */
+-(void)startVoiceRecordByAudioUnitByAudioConverter:(AudioConverterRef)audioConverter
+                                   needMagicCookie:(BOOL)isNeedMagicCookie
+                                         audioDesc:(AudioStreamBasicDescription)audioDesc;
+
+-(void)stopVoiceRecordAudioConverter:(AudioConverterRef)audioConverter
+                     needMagicCookie:(BOOL)isNeedMagicCookie;
 @end
 
 NS_ASSUME_NONNULL_END

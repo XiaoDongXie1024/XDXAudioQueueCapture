@@ -124,7 +124,7 @@ static void CaptureAudioDataCallback(void *                                 inUs
 #pragma mark - Public
 - (void)startAudioCapture {
     [self startAudioCaptureWithAudioInfo:m_audioInfo
-                                 formatID:kAudioFormatLinearPCM // kAudioFormatLinearPCM
+                                 formatID:kAudioFormatMPEG4AAC // kAudioFormatLinearPCM
                                sampleRate:44100
                              channelCount:1
                               durationSec:0.05
@@ -148,6 +148,7 @@ static void CaptureAudioDataCallback(void *                                 inUs
                                                   isNeedMagicCookie:isNeedMagicCookie
                                                           audioDesc:m_audioInfo->mDataFormat];
     self.isRecordVoice = YES;
+    NSLog(@"Audio Recorder: Start record file.");
 }
 
 - (void)stopRecordFile {
@@ -159,7 +160,9 @@ static void CaptureAudioDataCallback(void *                                 inUs
         isNeedMagicCookie = YES;
     }
     
-    [[XDXAudioFileHandler getInstance] stopVoiceRecordWithNeedMagicCookie:isNeedMagicCookie];
+    [[XDXAudioFileHandler getInstance] stopVoiceRecordByAudioQueue:m_audioInfo->mQueue
+                                                   needMagicCookie:isNeedMagicCookie];
+    NSLog(@"Audio Recorder: Stop record file.");
 }
 
 #pragma mark - Private
@@ -330,4 +333,7 @@ static void CaptureAudioDataCallback(void *                                 inUs
     NSLog (@"  Bits per Channel:    %10d",    asbd.mBitsPerChannel);
 }
 
+- (void)dealloc {
+    free(m_audioInfo);
+}
 @end
