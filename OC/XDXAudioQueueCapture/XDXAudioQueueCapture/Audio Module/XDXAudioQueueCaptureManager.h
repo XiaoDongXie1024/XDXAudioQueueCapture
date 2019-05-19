@@ -28,12 +28,17 @@ SingletonH
 
 
 /**
- * Start / Stop record file
+ * Start / Pause / Stop record file
  */
 - (void)startRecordFile;
+- (void)pauseAudioCapture;
 - (void)stopRecordFile;
 
-- (AudioQueueRef)getInputQueue;
+
+/**
+ * free related resources
+ */
+- (void)freeAudioCapture;
 
 @end
 

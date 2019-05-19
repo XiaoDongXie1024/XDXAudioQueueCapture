@@ -50,7 +50,13 @@ static void CaptureAudioDataCallback(void *                                 inUs
     lastTime = currentTime;
     */
     
-    // NSLog(@"Test data: %d,%d,%d,%d",inBuffer->mAudioDataByteSize,inNumPackets,inPacketDesc->mDataByteSize,inPacketDesc->mVariableFramesInPacket);
+    /*  Test size
+    if (inPacketDesc) {
+        NSLog(@"Test data: %d,%d,%d,%d",inBuffer->mAudioDataByteSize,inNumPackets,inPacketDesc->mDataByteSize,inPacketDesc->mVariableFramesInPacket);
+    }else {
+        NSLog(@"Test data: %d,%d",inBuffer->mAudioDataByteSize,inNumPackets);
+    }
+    */
     
     if (instance.isRecordVoice) {
         UInt32 bytesPerPacket = m_audioInfo->mDataFormat.mBytesPerPacket;
@@ -76,12 +82,25 @@ static void CaptureAudioDataCallback(void *                                 inUs
     m_audioInfo = malloc(sizeof(struct XDXRecorderInfo));
 }
 
-+ (instancetype)getInstance {    
-    return [[self alloc] init];
+- (instancetype)init {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        _instace = [super init];
+        
+        // Note: audioBufferSize couldn't more than durationSec max size.
+        [self configureAudioCaptureWithAudioInfo:m_audioInfo
+                                        formatID:kAudioFormatMPEG4AAC // kAudioFormatLinearPCM
+                                      sampleRate:44100
+                                    channelCount:1
+                                     durationSec:0.05
+                                      bufferSize:1024
+                                       isRunning:&self->_isRunning];
+    });
+    return _instace;
 }
 
-- (AudioQueueRef)getInputQueue {
-    return m_audioInfo->mQueue;
++ (instancetype)getInstance {    
+    return [[self alloc] init];
 }
 
 -(AudioStreamBasicDescription)getAudioFormatWithFormatID:(UInt32)formatID sampleRate:(Float64)sampleRate channelCount:(UInt32)channelCount {
@@ -124,15 +143,21 @@ static void CaptureAudioDataCallback(void *                                 inUs
 #pragma mark - Public
 - (void)startAudioCapture {
     [self startAudioCaptureWithAudioInfo:m_audioInfo
-                                 formatID:kAudioFormatMPEG4AAC // kAudioFormatLinearPCM
-                               sampleRate:44100
-                             channelCount:1
-                              durationSec:0.05
-                                isRunning:&_isRunning];
+                               isRunning:&_isRunning];
+}
+
+- (void)pauseAudioCapture {
+    [self pauseAudioCaptureWithAudioInfo:m_audioInfo
+                               isRunning:&_isRunning];
 }
 
 - (void)stopAudioCapture {
     [self stopAudioQueueRecorderWithAudioInfo:m_audioInfo
+                                    isRunning:&_isRunning];
+}
+
+- (void)freeAudioCapture {
+    [self freeAudioQueueRecorderWithAudioInfo:m_audioInfo
                                     isRunning:&_isRunning];
 }
 
@@ -166,17 +191,14 @@ static void CaptureAudioDataCallback(void *                                 inUs
 }
 
 #pragma mark - Private
-#pragma start / stop
-- (BOOL)startAudioCaptureWithAudioInfo:(XDXRecorderInfoType)audioInfo formatID:(UInt32)formatID sampleRate:(Float64)sampleRate channelCount:(UInt32)channelCount durationSec:(float)durationSec isRunning:(BOOL *)isRunning {
-    if (*isRunning) {
-        NSLog(@"Audio Recorder: Start recorder repeat");
-        return NO;
-    }
-    
+- (void)configureAudioCaptureWithAudioInfo:(XDXRecorderInfoType)audioInfo formatID:(UInt32)formatID sampleRate:(Float64)sampleRate channelCount:(UInt32)channelCount durationSec:(float)durationSec bufferSize:(UInt32)bufferSize isRunning:(BOOL *)isRunning {
     // Get Audio format ASBD
     audioInfo->mDataFormat = [self getAudioFormatWithFormatID:formatID
                                                    sampleRate:sampleRate
                                                  channelCount:channelCount];
+    
+    // Set sample time
+    [[AVAudioSession sharedInstance] setPreferredIOBufferDuration:durationSec error:NULL];
     
     // New queue
     OSStatus status = AudioQueueNewInput(&audioInfo->mDataFormat,
@@ -188,8 +210,7 @@ static void CaptureAudioDataCallback(void *                                 inUs
                                          &audioInfo->mQueue);
     
     if (status != noErr) {
-        NSLog(@"Audio Recorder: AudioQueueNewInput Failed status:%d \n",(int)status);
-        return NO;
+        NSLog(@"Audio Recorder: audio queue new input failed status:%d \n",(int)status);
     }
     
     // Set audio format for audio queue
@@ -200,27 +221,30 @@ static void CaptureAudioDataCallback(void *                                 inUs
                                    &size);
     if (status != noErr) {
         NSLog(@"Audio Recorder: get ASBD status:%d",(int)status);
-        return NO;
     }
     
     // Set capture data size
-    UInt32 bufferByteSize;
+    UInt32 maxBufferByteSize;
     if (audioInfo->mDataFormat.mFormatID == kAudioFormatLinearPCM) {
         int frames = (int)ceil(durationSec * audioInfo->mDataFormat.mSampleRate);
-        bufferByteSize = frames*audioInfo->mDataFormat.mBytesPerFrame*audioInfo->mDataFormat.mChannelsPerFrame;
+        maxBufferByteSize = frames*audioInfo->mDataFormat.mBytesPerFrame*audioInfo->mDataFormat.mChannelsPerFrame;
     }else {
         // AAC durationSec MIN: 23.219708 ms
-        bufferByteSize = durationSec * audioInfo->mDataFormat.mSampleRate;
+        maxBufferByteSize = durationSec * audioInfo->mDataFormat.mSampleRate;
         
-        if (bufferByteSize < 1024) {
-            bufferByteSize = 1024;
+        if (maxBufferByteSize < 1024) {
+            maxBufferByteSize = 1024;
         }
+    }
+    
+    if (bufferSize > maxBufferByteSize || bufferSize == 0) {
+        bufferSize = maxBufferByteSize;
     }
     
     // Allocate and Enqueue
     for (int i = 0; i != kNumberBuffers; i++) {
         status = AudioQueueAllocateBuffer(audioInfo->mQueue,
-                                              bufferByteSize,
+                                          bufferSize,
                                           &audioInfo->mBuffers[i]);
         if (status != noErr) {
             NSLog(@"Audio Recorder: Allocate buffer status:%d",(int)status);
@@ -234,14 +258,37 @@ static void CaptureAudioDataCallback(void *                                 inUs
             NSLog(@"Audio Recorder: Enqueue buffer status:%d",(int)status);
         }
     }
+}
+
+- (BOOL)startAudioCaptureWithAudioInfo:(XDXRecorderInfoType)audioInfo isRunning:(BOOL *)isRunning {
+    if (*isRunning) {
+        NSLog(@"Audio Recorder: Start recorder repeat");
+        return NO;
+    }
     
-    status = AudioQueueStart(audioInfo->mQueue, NULL);
+    OSStatus status = AudioQueueStart(audioInfo->mQueue, NULL);
     if (status != noErr) {
         NSLog(@"Audio Recorder: Audio Queue Start failed status:%d \n",(int)status);
         return NO;
     }else {
         NSLog(@"Audio Recorder: Audio Queue Start successful");
         *isRunning = YES;
+        return YES;
+    }
+}
+- (BOOL)pauseAudioCaptureWithAudioInfo:(XDXRecorderInfoType)audioInfo isRunning:(BOOL *)isRunning {
+    if (!*isRunning) {
+        NSLog(@"Audio Recorder: audio capture is not running !");
+        return NO;
+    }
+    
+    OSStatus status = AudioQueuePause(audioInfo->mQueue);
+    if (status != noErr) {
+        NSLog(@"Audio Recorder: Audio Queue pause failed status:%d \n",(int)status);
+        return NO;
+    }else {
+        NSLog(@"Audio Recorder: Audio Queue pause successful");
+        *isRunning = NO;
         return YES;
     }
 }
@@ -256,28 +303,44 @@ static void CaptureAudioDataCallback(void *                                 inUs
         OSStatus stopRes = AudioQueueStop(audioInfo->mQueue, true);
         
         if (stopRes == noErr){
-            for (int i = 0; i < kNumberBuffers; i++)
-                AudioQueueFreeBuffer(audioInfo->mQueue, audioInfo->mBuffers[i]);
+            NSLog(@"Audio Recorder: stop Audio Queue success.");
+            return YES;
         }else{
-            NSLog(@"Audio Recorder: stop AudioQueue failed.");
+            NSLog(@"Audio Recorder: stop Audio Queue failed.");
             return NO;
+        }
+    }else {
+        NSLog(@"Audio Recorder: stop Audio Queue failed, the queue is nil.");
+        return NO;
+    }
+}
+
+-(BOOL)freeAudioQueueRecorderWithAudioInfo:(XDXRecorderInfoType)audioInfo isRunning:(BOOL *)isRunning {
+    if (*isRunning) {
+        [self stopAudioQueueRecorderWithAudioInfo:audioInfo isRunning:isRunning];
+    }
+    
+    if (audioInfo->mQueue) {
+        for (int i = 0; i < kNumberBuffers; i++) {
+            AudioQueueFreeBuffer(audioInfo->mQueue, audioInfo->mBuffers[i]);
         }
         
         OSStatus status = AudioQueueDispose(audioInfo->mQueue, true);
         if (status != noErr) {
             NSLog(@"Audio Recorder: Dispose failed: %d",status);
-            return NO;
         }else {
             audioInfo->mQueue = NULL;
             *isRunning = NO;
-            //        AudioFileClose(mRecordFile);
-            NSLog(@"Audio Recorder: stop AudioQueue successful.");
+            NSLog(@"Audio Recorder: free AudioQueue successful.");
             return YES;
         }
+    }else {
+        NSLog(@"Audio Recorder: free Audio Queue failed, the queue is nil.");
     }
     
     return NO;
 }
+
 
 #pragma mark Other
 -(int)computeRecordBufferSizeFrom:(const AudioStreamBasicDescription *)format audioQueue:(AudioQueueRef)audioQueue durationSec:(float)durationSec {
